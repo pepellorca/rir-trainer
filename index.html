@@ -731,7 +731,6 @@ async function init() {
     await cargarActividadesCalendario();
 
     console.log('Config:', state.config);
-    renderSesiones();
     initCalendario();
   } catch(e) {
     document.getElementById('sesiones-sub').innerHTML =
@@ -742,32 +741,8 @@ async function init() {
 
 // ── RENDER SESIONES ──
 function renderSesiones() {
-  const MesocicloActual = state.config.MesocicloActual;
-  const semana = getSemanaActual();
-  document.getElementById('sesiones-sub').innerHTML =
-    `<span style="font-weight:600;color:var(--accent)">${MesocicloActual}</span> · Semana ${semana}`;
-
-  const filtradas = state.sesiones
-    .filter(s => s.ID_Mesociclo === MesocicloActual && parseInt(s.Semana) === semana)
-    .sort((a,b) => parseInt(a.NumeroSesion) - parseInt(b.NumeroSesion));
-
-  if (!filtradas.length) {
-    document.getElementById('sesiones-list').innerHTML =
-      `<div class="empty">No hay sesiones configuradas para la Semana ${semana} del mesociclo ${MesocicloActual}.</div>`;
-    return;
-  }
-
-  document.getElementById('sesiones-list').innerHTML = filtradas.map(s => {
-    const done = s.Estado === 'Completada';
-    return `<div class="sesion-card ${done?'completada':''}" onclick="selectSesion('${s.ID_Sesion}')">
-      <div class="sesion-info">
-        <div class="sesion-nombre">${s.NombreSesion}</div>
-        <div class="sesion-meta">Sesión ${s.NumeroSesion}</div>
-      </div>
-      <span class="sesion-estado ${done?'completada':'pendiente'}">${done?'✓ Lista':'Pendiente'}</span>
-      <span class="chevron">›</span>
-    </div>`;
-  }).join('');
+  // renderSesiones ya no controla la pantalla de inicio (lo hace initCalendario)
+  // Se mantiene para compatibilidad con selectSesion y navegación
 }
 
 // ── GRUPO MUSCULAR ICON ──
@@ -1522,27 +1497,35 @@ function cerrarModal(e) {
 // ── INIT CALENDARIO ──
 function initCalendario() {
   try {
-    if (!state.config) { console.error('initCalendario: no config'); return; }
-    const MesocicloActual = state.config.MesocicloActual || 'M5';
-    const semana = getSemanaActual();
+    if (!state.config) return;
+    const meso = state.config.MesocicloActual || 'M5';
+    const sem = getSemanaActual();
 
-    const elSemanaInfo = document.getElementById('semana-info');
-    const elCalHeader = document.getElementById('cal-header');
-    const elSub = document.getElementById('sesiones-sub');
+    // Ocultar spinner de carga
+    const sub = document.getElementById('sesiones-sub');
+    if (sub) sub.style.display = 'none';
 
-    if (elSemanaInfo) {
-      elSemanaInfo.style.display = 'flex';
-      document.getElementById('semana-info-label').textContent = MesocicloActual + ' · Semana ' + semana + ' de 4';
-      document.getElementById('semana-info-sub').textContent = 'L=D1 · X=D2 · V=D3 · pulsa un día para registrar';
-      document.getElementById('semana-info-valor').textContent = 'S' + semana;
-    }
-    if (elCalHeader) elCalHeader.style.display = 'flex';
-    if (elSub) elSub.style.display = 'none';
+    // Mostrar info semana
+    document.getElementById('semana-info').style.removeProperty('display');
+    document.getElementById('semana-info').style.display = 'flex';
+    document.getElementById('semana-info-label').textContent = meso + ' · Semana ' + sem + ' de 4';
+    document.getElementById('semana-info-sub').textContent = 'L=D1 · X=D2 · V=D3 · pulsa un día para registrar';
+    document.getElementById('semana-info-valor').textContent = 'S' + sem;
 
+    // Mostrar cabecera del calendario
+    document.getElementById('cal-header').style.display = 'flex';
+
+    // Renderizar calendario
     renderCalendario();
-    console.log('Calendario iniciado OK — ' + MesocicloActual + ' S' + semana);
+
   } catch(err) {
-    console.error('initCalendario error:', err);
+    // Si falla, mostrar error visible en pantalla
+    const sub = document.getElementById('sesiones-sub');
+    if (sub) {
+      sub.style.display = 'block';
+      sub.innerHTML = '<div class="error-box">Error iniciando calendario: ' + err.message + '</div>';
+    }
+    console.error('initCalendario error:', err.message, err.stack);
   }
 }
 
