@@ -614,56 +614,60 @@ function getUltimoPeso(ejercicio) {
 }
 
 // Devuelve array de {mesociclo, peso} con la evolución histórica del ejercicio
-function getEvolucionPeso(ejercicio) {
-  const nombre = (ejercicio.NombreEjercicio || '').trim().toLowerCase().replace(/\s+/g,' ');
-  if (!nombre) return [];
+// Normaliza nombre eliminando variantes para comparación flexible
+function normNombre(n) {
+  return (n||'').toLowerCase()
+    .replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i')
+    .replace(/[óòö]/g,'o').replace(/[úùü]/g,'u').replace(/ñ/g,'n')
+    .replace(/\bcon pausa\b|\blastrad[ao]\b|\bconvencional\b|\bsimetric[ao]\b/g,'')
+    .replace(/\bagarre (ancho|cerrado|neutro|prono|pron[ao])\b/g,'')
+    .replace(/\b(de pie|pie medial|medial|t&g|2m|1m|2 manos|1 mano|media altura)\b/g,'')
+    .replace(/\b(mancuerna|barra|2p|inclinado|plano|neutro|prono|proma|promo|unilateral|dinamico)\b/g,'')
+    .replace(/\s+/g,' ').trim();
+}
 
+function mismoEj(n1, n2) {
+  const a = normNombre(n1), b = normNombre(n2);
+  if (a === b) return true;
+  if (a.length > 4 && b.includes(a)) return true;
+  if (b.length > 4 && a.includes(b)) return true;
+  return false;
+}
+
+function getEvolucionPeso(ejercicio) {
+  const nombre = ejercicio.NombreEjercicio || '';
+  if (!nombre) return [];
   const mesociclos = ['M1','M2','M3','M4','M5'];
   const evolucion = [];
 
   for (const m of mesociclos) {
-    // Buscar en semana 1 de cada mesociclo por nombre normalizado
     const ejs = state.ejercicios.filter(e => {
       const id = e.ID_EjercicioPlan || '';
-      const eNombre = (e.NombreEjercicio || '').trim().toLowerCase().replace(/\s+/g,' ');
-      const esSemana1 = id.startsWith(`${m}-S1-`);
-      const pesoRaw = e.PesoActual || e['Peso Actual'] || '';
-      const peso = parseFloat(String(pesoRaw).replace(',','.')) || 0;
-      return eNombre === nombre && esSemana1 && peso > 0;
+      const peso = parseFloat(String(e.PesoActual || e['Peso Actual'] || '0').replace(',','.')) || 0;
+      return id.startsWith(`${m}-S1-`) && peso > 0 && mismoEj(e.NombreEjercicio, nombre);
     });
-
     if (ejs.length > 0) {
-      const pesoRaw = ejs[0].PesoActual || ejs[0]['Peso Actual'] || '0';
-      const peso = parseFloat(String(pesoRaw).replace(',','.')) || 0;
+      const peso = parseFloat(String(ejs[0].PesoActual || ejs[0]['Peso Actual'] || '0').replace(',','.')) || 0;
       if (peso > 0) {
-        // Solo añadir si es diferente al anterior para no repetir
-        const anterior = evolucion[evolucion.length-1];
-        if (!anterior || anterior.peso !== peso) {
-          evolucion.push({ mesociclo: m, peso });
-        }
+        const ant = evolucion[evolucion.length-1];
+        if (!ant || ant.peso !== peso) evolucion.push({ mesociclo: m, peso });
       }
     }
-  }
-
-  // Enriquecer con datos reales de RegistroSeries si existen
-  for (const entry of evolucion) {
-    const seriesReales = state.registroSeries.filter(r => {
-      const ejPlan = state.ejercicios.find(e => e.ID_EjercicioPlan === r.ID_EjercicioPlan);
-      if (!ejPlan) return false;
-      const eNombre = (ejPlan.NombreEjercicio||'').trim().toLowerCase().replace(/\s+/g,' ');
-      const id = ejPlan.ID_EjercicioPlan || '';
-      return eNombre === nombre && id.startsWith(entry.mesociclo) && parseFloat(r.Peso) > 0;
+    // Sustituir con datos reales si existen
+    const reales = state.registroSeries.filter(r => {
+      const ep = state.ejercicios.find(e => e.ID_EjercicioPlan === r.ID_EjercicioPlan);
+      return ep && (ep.ID_EjercicioPlan||'').startsWith(m) &&
+             mismoEj(ep.NombreEjercicio, nombre) && parseFloat(r.Peso) > 0;
     });
-    if (seriesReales.length > 0) {
-      entry.peso = Math.max(...seriesReales.map(r => parseFloat(r.Peso)||0));
-      entry.real = true;
+    if (reales.length > 0) {
+      const pesoMax = Math.max(...reales.map(r => parseFloat(r.Peso)||0));
+      const idx = evolucion.findIndex(e => e.mesociclo === m);
+      if (idx >= 0) { evolucion[idx].peso = pesoMax; evolucion[idx].real = true; }
     }
   }
-
   return evolucion;
 }
 
-// Genera el string de evolución: "64 → 70 → 70kg ↑"
 function renderEvolucion(evolucion) {
   if (evolucion.length < 2) return '';
   const primero = evolucion[0].peso;
