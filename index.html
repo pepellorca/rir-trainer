@@ -647,7 +647,7 @@
   <button class="bottom-nav-item active" id="nav-inicio" onclick="navTo('sesiones','nav-inicio')">
     <span class="bottom-nav-icon">🏠</span>Inicio
   </button>
-  <button class="bottom-nav-item" id="nav-entrenar" onclick="navTo('ejercicios','nav-entrenar')">
+  <button class="bottom-nav-item" id="nav-entrenar" onclick="navTo('sesiones','nav-inicio');document.getElementById('nav-inicio').classList.remove('active');document.getElementById('nav-entrenar').classList.add('active')">
     <span class="bottom-nav-icon">💪</span>Entrenar
   </button>
   <button class="bottom-nav-item" id="nav-progreso" onclick="navTo('progreso','nav-progreso');renderProgreso()">
@@ -1260,12 +1260,14 @@ function keyFecha(fecha) {
 }
 
 function renderCalendario() {
+  try {
   const year = calFecha.getFullYear();
   const month = calFecha.getMonth();
   const hoy = new Date();
 
-  document.getElementById('cal-mes-titulo').textContent =
-    MESES[month] + ' ' + year;
+  const elTitulo = document.getElementById('cal-mes-titulo');
+  if (!elTitulo) { console.error('cal-mes-titulo not found'); return; }
+  elTitulo.textContent = MESES[month] + ' ' + year;
 
   // Cabeceras días
   let html = DIAS_SEMANA.map(d =>
@@ -1306,7 +1308,10 @@ function renderCalendario() {
     </div>`;
   }
 
-  document.getElementById('cal-grid').innerHTML = html;
+  const calGrid = document.getElementById('cal-grid');
+  if (calGrid) calGrid.innerHTML = html;
+  else console.error('cal-grid not found');
+  } catch(err) { console.error('renderCalendario error:', err); }
 }
 
 function getSesionDelDia(key) {
@@ -1392,19 +1397,30 @@ function cerrarModal(e) {
 
 // ── INIT CALENDARIO ──
 function initCalendario() {
-  if (!state.config) return;
-  const { MesocicloActual, SemanaActual } = state.config;
-  const semana = parseInt(SemanaActual);
+  try {
+    if (!state.config) { console.error('initCalendario: no config'); return; }
+    const MesocicloActual = state.config.MesocicloActual || 'M5';
+    const SemanaActual = state.config.SemanaActual || 1;
+    const semana = parseInt(SemanaActual);
 
-  document.getElementById('semana-info').style.display = 'flex';
-  document.getElementById('semana-info-label').textContent = `${MesocicloActual} · Semana ${semana} de 4`;
-  document.getElementById('semana-info-sub').textContent = 'L=D1 · X=D2 · V=D3 (pulsa un día para cambiar)';
-  document.getElementById('semana-info-valor').textContent = `S${semana}`;
-  document.getElementById('cal-header').style.display = 'flex';
-  const sub = document.getElementById('sesiones-sub');
-  if (sub) sub.style.display = 'none';
+    const elSemanaInfo = document.getElementById('semana-info');
+    const elCalHeader = document.getElementById('cal-header');
+    const elSub = document.getElementById('sesiones-sub');
 
-  renderCalendario();
+    if (elSemanaInfo) {
+      elSemanaInfo.style.display = 'flex';
+      document.getElementById('semana-info-label').textContent = MesocicloActual + ' · Semana ' + semana + ' de 4';
+      document.getElementById('semana-info-sub').textContent = 'L=D1 · X=D2 · V=D3 · pulsa un día para registrar';
+      document.getElementById('semana-info-valor').textContent = 'S' + semana;
+    }
+    if (elCalHeader) elCalHeader.style.display = 'flex';
+    if (elSub) elSub.style.display = 'none';
+
+    renderCalendario();
+    console.log('Calendario iniciado OK — ' + MesocicloActual + ' S' + semana);
+  } catch(err) {
+    console.error('initCalendario error:', err);
+  }
 }
 
 
