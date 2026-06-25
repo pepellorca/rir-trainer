@@ -671,6 +671,7 @@ const BASE = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out
 let state = {
   config: null, sesiones: [], ejercicios: [],
   registroSeries: [], registroEjercicios: [],
+  medidas: [],
   sesionActual: null, ejercicioActual: null,
   seriesLocales: {},
 };
@@ -717,16 +718,18 @@ async function fetchSheet(name) {
 // ── INIT ──
 async function init() {
   try {
-    const [config, sesiones, ejercicios, regSeries, regEjercicios] = await Promise.all([
+    const [config, sesiones, ejercicios, regSeries, regEjercicios, medidas] = await Promise.all([
       fetchSheet('Configuracion'), fetchSheet('Sesiones'),
       fetchSheet('EjerciciosPlan'), fetchSheet('RegistroSeries'),
-      fetchSheet('RegistroEjercicios'),
+      fetchSheet('RegistroEjercicios'), fetchSheet('Medidas'),
     ]);
     state.config = config[0];
     state.sesiones = sesiones;
     state.ejercicios = ejercicios;
     state.registroSeries = regSeries;
     state.registroEjercicios = regEjercicios;
+    state.medidas = medidas || [];
+    console.log('Medidas cargadas:', state.medidas.length);
 
     // Calcular semana automáticamente desde FechaInicio
     calcularSemanaActual();
@@ -1879,12 +1882,30 @@ const MEDIDAS_CONFIG = {
 };
 
 function getAllMedidas() {
-  return [...MEDIDAS_HISTORICO, ...medidasExtra]
-    .sort((a,b) => {
-      const pa = a.fecha.split('/').reverse().join('');
-      const pb = b.fecha.split('/').reverse().join('');
-      return pa.localeCompare(pb);
-    });
+  // Combinar datos de la Sheet con nuevas medidas de la sesión
+  const deSheet = state.medidas.map(m => ({
+    fecha:      m.Fecha || m.fecha || '',
+    peso:       parseFloat(m.Peso || m.peso || 0),
+    cintura:    parseFloat(m.Cintura || m.cintura || 0),
+    gluteo:     parseFloat(m.Gluteo || m.gluteo || 0),
+    muslo:      parseFloat(m.Muslo || m.muslo || 0),
+    musloMedio: parseFloat(m.MusloMedio || m.musloMedio || m.muslo_medio || 0),
+    biceps:     parseFloat(m.Biceps || m.biceps || 0),
+    pecho:      parseFloat(m.Pecho || m.pecho || 0),
+  })).filter(m => m.fecha && m.peso > 0);
+
+  const todas = [...deSheet, ...medidasExtra];
+
+  return todas.sort((a,b) => {
+    // Ordenar por fecha DD/MM/YYYY
+    const parseFecha = f => {
+      if (!f) return 0;
+      const p = String(f).split('/');
+      if (p.length === 3) return new Date(parseInt(p[2]), parseInt(p[1])-1, parseInt(p[0])).getTime();
+      return new Date(f).getTime();
+    };
+    return parseFecha(a.fecha) - parseFecha(b.fecha);
+  });
 }
 
 function renderMedidas() {
@@ -2059,32 +2080,48 @@ function mostrarFormMedidas() {
 }
 
 async function guardarMedidas() {
-  const hoy = new Date().toLocaleDateString('es-ES', {day:'2-digit',month:'2-digit',year:'numeric'});
-  const nueva = { fecha: hoy };
-  const ultima = getAllMedidas().slice(-1)[0];
+  const hoy = new Date();
+  const fechaStr = String(hoy.getDate()).padStart(2,'0') + '/' +
+                   String(hoy.getMonth()+1).padStart(2,'0') + '/' +
+                   hoy.getFullYear();
+  const ultima = getAllMedidas().slice(-1)[0] || {};
+  const nueva = { fecha: fechaStr };
 
   let validos = 0;
   for (const key of Object.keys(MEDIDAS_CONFIG)) {
     const input = document.getElementById('input-' + key);
-    const val = parseFloat(input?.value);
+    const val = parseFloat(String(input?.value || '').replace(',','.'));
     nueva[key] = isNaN(val) ? (ultima[key] || 0) : val;
-    if (!isNaN(val)) validos++;
+    if (!isNaN(val) && val > 0) validos++;
   }
 
   if (validos === 0) { showToast('Introduce al menos una medida', 'error'); return; }
 
+  // Añadir a la lista local
   medidasExtra.push(nueva);
 
-  // Enviar a Google Sheet
+  // Guardar en Google Sheet via Apps Script
   try {
     await fetch(APPS_SCRIPT_URL, {
       method: 'POST', mode: 'no-cors',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ type: 'medidas', row: nueva }),
+      body: JSON.stringify({
+        type: 'medidas',
+        row: {
+          Fecha:      nueva.fecha,
+          Peso:       nueva.peso,
+          Cintura:    nueva.cintura,
+          Gluteo:     nueva.gluteo,
+          Muslo:      nueva.muslo,
+          MusloMedio: nueva.musloMedio,
+          Biceps:     nueva.biceps,
+          Pecho:      nueva.pecho,
+        }
+      }),
     });
-    showToast('Medición guardada ✓', 'success');
+    showToast('Medición guardada en Sheet ✓', 'success');
   } catch(e) {
-    showToast('Guardado localmente (sin conexión)', '');
+    showToast('Guardado localmente', '');
   }
 
   document.getElementById('form-medidas').style.display = 'none';
@@ -2094,3 +2131,4 @@ async function guardarMedidas() {
 </script>
 </body>
 </html>
+
