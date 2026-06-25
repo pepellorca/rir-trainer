@@ -723,6 +723,11 @@ async function init() {
     state.ejercicios = ejercicios;
     state.registroSeries = regSeries;
     state.registroEjercicios = regEjercicios;
+    console.log('State cargado:', {
+      config: state.config,
+      sesiones: state.sesiones.length,
+      ejercicios: state.ejercicios.length
+    });
     renderSesiones();
     initCalendario();
   } catch(e) {
@@ -1499,7 +1504,7 @@ function renderProgreso() {
     }
   });
 
-  const formatKg = n => n >= 1000 ? (n/1000).toFixed(1) + 'T' : Math.round(n).toLocaleString('es-ES') + ' kg';
+  const formatKg = n => Math.round(n).toLocaleString('es-ES') + ' kg';
 
   html += `<div class="progreso-bloque">
     <div class="progreso-bloque-header">
@@ -1777,7 +1782,7 @@ function renderMedidas() {
     <div class="medidas-nav">${navHtml}</div>
     <div class="medidas-grafico-wrap">
       <div class="medidas-grafico-titulo" id="grafico-titulo"></div>
-      <canvas id="grafico-medida" height="180"></canvas>
+      <canvas id="grafico-medida" height="200" style="height:200px!important;max-height:200px!important;display:block"></canvas>
     </div>`;
 
   renderGrafico(medidaActiva);
@@ -1814,6 +1819,8 @@ function renderGrafico(key) {
   const esMejora = (cfg.mejora === 'menos' && delta < 0) || (cfg.mejora === 'mas' && delta > 0);
   const lineColor = esMejora ? '#30d158' : '#f5a623';
 
+  canvas.style.height = '200px';
+  canvas.style.maxHeight = '200px';
   graficoChart = new Chart(ctx, {
     type: 'line',
     data: {
