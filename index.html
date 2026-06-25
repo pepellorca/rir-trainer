@@ -377,9 +377,10 @@
   .cal-badges { display: flex; flex-direction: column; gap: 2px; align-items: center; }
   .cal-badge {
     font-size: 9px; font-weight: 700; letter-spacing: 0.3px;
-    padding: 1px 5px; border-radius: 6px; line-height: 1.4;
-    text-transform: uppercase;
+    padding: 2px 5px; border-radius: 6px; line-height: 1.4;
+    text-transform: uppercase; display: block;
   }
+  .cal-badges { min-height: 16px; }
   .cal-badge.d1 { background: rgba(48,209,88,0.2); color: #30d158; }
   .cal-badge.d2 { background: rgba(10,132,255,0.2); color: #0a84ff; }
   .cal-badge.d3 { background: rgba(245,166,35,0.2); color: #f5a623; }
@@ -553,6 +554,8 @@
   .bottom-nav-item.active { color: var(--accent); }
   .bottom-nav-icon { font-size: 20px; line-height: 1; }
   .screen { padding-bottom: 80px !important; }
+  #screen-sesiones { min-height: 100vh; }
+  .cal-grid { min-height: 320px; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
@@ -1260,19 +1263,25 @@ function calcularSemanaActual() {
   const fechaStr = String(fechaInicioRaw).trim();
 
   if (fechaStr.includes('/')) {
-    // Formato DD/MM/YYYY o D/M/YYYY
+    // Formato DD/MM/YYYY o D/M/YYYY (Google Sheets España)
     const partes = fechaStr.split('/');
     if (partes.length === 3) {
-      const dia = parseInt(partes[0]);
-      const mes = parseInt(partes[1]) - 1; // 0-indexed
-      const anyo = parseInt(partes[2]);
+      const dia  = parseInt(partes[0]);
+      const mes  = parseInt(partes[1]) - 1;
+      const anyo = parseInt(partes[2]) < 100 ? 2000 + parseInt(partes[2]) : parseInt(partes[2]);
       fechaInicio = new Date(anyo, mes, dia);
     }
+  } else if (fechaStr.includes('-')) {
+    // Formato YYYY-MM-DD
+    const partes = fechaStr.split('-');
+    fechaInicio = new Date(parseInt(partes[0]), parseInt(partes[1])-1, parseInt(partes[2]));
   } else if (!isNaN(parseFloat(fechaStr))) {
     // Número serial de Google Sheets (días desde 30/12/1899)
     const serial = parseFloat(fechaStr);
-    fechaInicio = new Date(Date.UTC(1899, 11, 30) + serial * 86400000);
+    const d = new Date(Date.UTC(1899, 11, 30) + serial * 86400000);
+    fechaInicio = new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
   }
+  console.log('FechaInicio parseada:', fechaInicio, 'desde:', fechaStr);
 
   if (!fechaInicio || isNaN(fechaInicio.getTime())) {
     console.warn('FechaInicio no parseable:', fechaInicioRaw);
@@ -1310,9 +1319,20 @@ function getFechasSemana(numSemana) {
 
 // Devuelve a qué semana del mesociclo pertenece una fecha
 function getSemanaDeUnaFecha(fecha) {
-  if (!state.config?._fechaInicioObj) return null;
-  const inicio = state.config._fechaInicioObj;
-  const dias = Math.floor((fecha - inicio) / (1000 * 60 * 60 * 24));
+  if (!state.config) return null;
+
+  // Obtener fecha inicio — intentar desde _fechaInicioObj o recalcular
+  let inicio = state.config._fechaInicioObj;
+  if (!inicio) {
+    calcularSemanaActual();
+    inicio = state.config._fechaInicioObj;
+  }
+  if (!inicio) return null;
+
+  // Comparar solo fechas (sin horas) para evitar offset
+  const inicioSolo = new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate());
+  const fechaSolo  = new Date(fecha.getFullYear(), fecha.getMonth(), fecha.getDate());
+  const dias = Math.floor((fechaSolo - inicioSolo) / (1000 * 60 * 60 * 24));
   if (dias < 0) return null;
   const sem = Math.floor(dias / 7) + 1;
   return sem >= 1 && sem <= 4 ? sem : null;
