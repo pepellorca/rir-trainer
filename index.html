@@ -580,6 +580,7 @@
     <button class="cal-nav-btn" onclick="cambiarMes(1)">›</button>
   </div>
   <div class="cal-grid" id="cal-grid"></div>
+  <div id="sesiones-list"></div>
 </div>
 
 <!-- MODAL ACTIVIDAD -->
@@ -725,8 +726,7 @@ async function init() {
     renderSesiones();
     initCalendario();
   } catch(e) {
-    document.getElementById('sesiones-sub').innerHTML = '';
-    document.getElementById('sesiones-list').innerHTML =
+    document.getElementById('sesiones-sub').innerHTML =
       `<div class="error-box">❌ Error al cargar datos.<br><br>${e.message}<br><br>
       Asegúrate de que la Google Sheet está compartida como "Cualquier persona con el enlace puede ver".</div>`;
   }
@@ -1398,10 +1398,11 @@ function initCalendario() {
 
   document.getElementById('semana-info').style.display = 'flex';
   document.getElementById('semana-info-label').textContent = `${MesocicloActual} · Semana ${semana} de 4`;
-  document.getElementById('semana-info-sub').textContent = 'L=D1 · X=D2 · V=D3 (puedes cambiar cada día)';
+  document.getElementById('semana-info-sub').textContent = 'L=D1 · X=D2 · V=D3 (pulsa un día para cambiar)';
   document.getElementById('semana-info-valor').textContent = `S${semana}`;
   document.getElementById('cal-header').style.display = 'flex';
-  document.getElementById('sesiones-sub').style.display = 'none';
+  const sub = document.getElementById('sesiones-sub');
+  if (sub) sub.style.display = 'none';
 
   renderCalendario();
 }
