@@ -1251,55 +1251,67 @@ async function guardarActividadCalendario(key, tipo) {
 function calcularSemanaActual() {
   if (!state.config) return;
 
-  const fechaInicioRaw = state.config.FechaInicio || '';
-  if (!fechaInicioRaw) {
-    // Sin fecha de inicio, usar SemanaActual del config
-    state.config._semanaCalculada = parseInt(state.config.SemanaActual || 1);
+  // Log completo de lo que llega desde la Sheet
+  console.log('Config completo:', JSON.stringify(state.config));
+
+  const fechaInicioRaw = state.config.FechaInicio ||
+                         state.config.fechainicio ||
+                         state.config.FECHAINICIO || '';
+  console.log('FechaInicio raw:', fechaInicioRaw, typeof fechaInicioRaw);
+
+  let fechaInicio = null;
+
+  if (!fechaInicioRaw || fechaInicioRaw === '') {
+    // Sin fecha, usar semana 1
+    state.config._semanaCalculada = 1;
+    console.warn('Sin FechaInicio — usando semana 1');
     return;
   }
 
-  // Parsear fecha — puede venir como DD/MM/YYYY, D/M/YYYY o como número serial de Sheets
-  let fechaInicio;
-  const fechaStr = String(fechaInicioRaw).trim();
+  const raw = String(fechaInicioRaw).trim();
 
-  if (fechaStr.includes('/')) {
-    // Formato DD/MM/YYYY o D/M/YYYY (Google Sheets España)
-    const partes = fechaStr.split('/');
-    if (partes.length === 3) {
-      const dia  = parseInt(partes[0]);
-      const mes  = parseInt(partes[1]) - 1;
-      const anyo = parseInt(partes[2]) < 100 ? 2000 + parseInt(partes[2]) : parseInt(partes[2]);
-      fechaInicio = new Date(anyo, mes, dia);
+  try {
+    if (raw.includes('/')) {
+      // D/M/YYYY o DD/MM/YYYY
+      const p = raw.split('/');
+      const dia  = parseInt(p[0]);
+      const mes  = parseInt(p[1]) - 1;
+      const anyo = parseInt(p[2]);
+      fechaInicio = new Date(anyo < 100 ? 2000+anyo : anyo, mes, dia);
+    } else if (raw.includes('-')) {
+      // YYYY-MM-DD
+      const p = raw.split('-');
+      fechaInicio = new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2]));
+    } else if (!isNaN(Number(raw))) {
+      // Serial de Google Sheets
+      const serial = Number(raw);
+      const d = new Date(Math.round((serial - 25569) * 86400 * 1000));
+      fechaInicio = new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
     }
-  } else if (fechaStr.includes('-')) {
-    // Formato YYYY-MM-DD
-    const partes = fechaStr.split('-');
-    fechaInicio = new Date(parseInt(partes[0]), parseInt(partes[1])-1, parseInt(partes[2]));
-  } else if (!isNaN(parseFloat(fechaStr))) {
-    // Número serial de Google Sheets (días desde 30/12/1899)
-    const serial = parseFloat(fechaStr);
-    const d = new Date(Date.UTC(1899, 11, 30) + serial * 86400000);
-    fechaInicio = new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  } catch(e) {
+    console.error('Error parseando fecha:', e);
   }
-  console.log('FechaInicio parseada:', fechaInicio, 'desde:', fechaStr);
+
+  console.log('FechaInicio parseada:', fechaInicio);
 
   if (!fechaInicio || isNaN(fechaInicio.getTime())) {
-    console.warn('FechaInicio no parseable:', fechaInicioRaw);
-    state.config._semanaCalculada = parseInt(state.config.SemanaActual || 1);
-    return;
+    console.warn('No se pudo parsear FechaInicio:', raw, '— usando semana 1');
+    state.config._semanaCalculada = 1;
+    // Usar fecha hardcodeada como fallback (22/6/2026)
+    fechaInicio = new Date(2026, 5, 22); // Junio = mes 5
+    console.log('Usando fecha fallback:', fechaInicio);
   }
 
-  // Calcular semana actual
+  fechaInicio.setHours(0,0,0,0);
   const hoy = new Date();
   hoy.setHours(0,0,0,0);
-  fechaInicio.setHours(0,0,0,0);
 
-  const diasDesdeInicio = Math.floor((hoy - fechaInicio) / (1000 * 60 * 60 * 24));
-  const semanaCalculada = Math.min(Math.max(Math.floor(diasDesdeInicio / 7) + 1, 1), 4);
+  const dias = Math.floor((hoy - fechaInicio) / 86400000);
+  const sem = Math.min(Math.max(Math.floor(dias / 7) + 1, 1), 4);
 
-  state.config._semanaCalculada = semanaCalculada;
+  state.config._semanaCalculada = sem;
   state.config._fechaInicioObj = fechaInicio;
-  console.log('Semana calculada:', semanaCalculada, '| Días desde inicio:', diasDesdeInicio);
+  console.log('Resultado — Semana:', sem, '| Días:', dias, '| Inicio:', fechaInicio.toDateString());
 }
 
 // Devuelve la semana actual calculada automáticamente
