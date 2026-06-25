@@ -614,53 +614,56 @@ function getUltimoPeso(ejercicio) {
 }
 
 // Devuelve array de {mesociclo, peso} con la evolución histórica del ejercicio
-// usando PesoActual de EjerciciosPlan por nombre de ejercicio
 function getEvolucionPeso(ejercicio) {
-  const nombre = ejercicio.NombreEjercicio?.trim().toLowerCase();
+  const nombre = (ejercicio.NombreEjercicio || '').trim().toLowerCase().replace(/\s+/g,' ');
   if (!nombre) return [];
 
-  // Buscar en todos los ejercicios del plan el mismo nombre, semana 1 de cada mesociclo
   const mesociclos = ['M1','M2','M3','M4','M5'];
   const evolucion = [];
 
   for (const m of mesociclos) {
-    // Buscar en semana 1 de cada mesociclo para evitar duplicados
+    // Buscar en semana 1 de cada mesociclo por nombre normalizado
     const ejs = state.ejercicios.filter(e => {
       const id = e.ID_EjercicioPlan || '';
-      const mismoNombre = e.NombreEjercicio?.trim().toLowerCase() === nombre;
-      const esSemana1 = id.includes(`${m}-S1-`);
-      const peso = parseFloat(e.PesoActual || e['Peso Actual'] || 0);
-      return mismoNombre && esSemana1 && peso > 0;
+      const eNombre = (e.NombreEjercicio || '').trim().toLowerCase().replace(/\s+/g,' ');
+      const esSemana1 = id.startsWith(`${m}-S1-`);
+      const pesoRaw = e.PesoActual || e['Peso Actual'] || '';
+      const peso = parseFloat(String(pesoRaw).replace(',','.')) || 0;
+      return eNombre === nombre && esSemana1 && peso > 0;
     });
 
     if (ejs.length > 0) {
-      const peso = parseFloat(ejs[0].PesoActual || ejs[0]['Peso Actual'] || 0);
-      // Evitar duplicados consecutivos del mismo peso
-      if (evolucion.length === 0 || evolucion[evolucion.length-1].peso !== peso) {
-        evolucion.push({ mesociclo: m, peso });
+      const pesoRaw = ejs[0].PesoActual || ejs[0]['Peso Actual'] || '0';
+      const peso = parseFloat(String(pesoRaw).replace(',','.')) || 0;
+      if (peso > 0) {
+        // Solo añadir si es diferente al anterior para no repetir
+        const anterior = evolucion[evolucion.length-1];
+        if (!anterior || anterior.peso !== peso) {
+          evolucion.push({ mesociclo: m, peso });
+        }
       }
     }
+  }
 
-    // También buscar en RegistroSeries si hay datos reales
+  // Enriquecer con datos reales de RegistroSeries si existen
+  for (const entry of evolucion) {
     const seriesReales = state.registroSeries.filter(r => {
       const ejPlan = state.ejercicios.find(e => e.ID_EjercicioPlan === r.ID_EjercicioPlan);
-      return ejPlan &&
-        ejPlan.NombreEjercicio?.trim().toLowerCase() === nombre &&
-        (ejPlan.ID_EjercicioPlan||'').startsWith(m) &&
-        parseFloat(r.Peso) > 0;
+      if (!ejPlan) return false;
+      const eNombre = (ejPlan.NombreEjercicio||'').trim().toLowerCase().replace(/\s+/g,' ');
+      const id = ejPlan.ID_EjercicioPlan || '';
+      return eNombre === nombre && id.startsWith(entry.mesociclo) && parseFloat(r.Peso) > 0;
     });
     if (seriesReales.length > 0) {
-      const pesoMax = Math.max(...seriesReales.map(r => parseFloat(r.Peso)||0));
-      // Si hay datos reales, sustituye el dato del plan para ese mesociclo
-      const idx = evolucion.findIndex(e => e.mesociclo === m);
-      if (idx >= 0) evolucion[idx] = { mesociclo: m, peso: pesoMax, real: true };
+      entry.peso = Math.max(...seriesReales.map(r => parseFloat(r.Peso)||0));
+      entry.real = true;
     }
   }
 
   return evolucion;
 }
 
-// Genera el string de evolución: "64 → 64 → 70 → 70kg ↑"
+// Genera el string de evolución: "64 → 70 → 70kg ↑"
 function renderEvolucion(evolucion) {
   if (evolucion.length < 2) return '';
   const primero = evolucion[0].peso;
@@ -668,7 +671,7 @@ function renderEvolucion(evolucion) {
   const tendencia = ultimo > primero ? '↑' : (ultimo < primero ? '↓' : '→');
   const color = ultimo > primero ? 'var(--green)' : (ultimo < primero ? 'var(--red)' : 'var(--text2)');
   const pesos = evolucion.map(e => e.peso + 'kg').join(' → ');
-  return `<div class="evolucion-bar" style="color:${color}">${pesos} ${tendencia}</div>`;
+  return `<div class="evolucion-bar" style="color:${color};margin-top:6px">${pesos} ${tendencia}</div>`;
 }
 
 function getPesoRecomendado(ejercicio, ultimoPeso) {
