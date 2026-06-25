@@ -1371,18 +1371,41 @@ const TIPOS_ACTIVIDAD = [
 // Calcular qué sesión toca cada semana según mesociclo
 function getSesionDelMes(fecha) {
   if (!state.config) return null;
-  const mesocicloActual = state.config.MesocicloActual || 'M5';
+  const meso = state.config.MesocicloActual || 'M5';
 
-  // Calcular semana basada en FechaInicio del mesociclo
-  const semanaDelDia = getSemanaDeUnaFecha(fecha);
-  if (!semanaDelDia) return null;
+  // Obtener fecha inicio
+  let inicio = state.config._fechaInicioObj;
+  if (!inicio) {
+    calcularSemanaActual();
+    inicio = state.config._fechaInicioObj;
+  }
+  if (!inicio) return null;
 
-  // Días L/X/V = D1/D2/D3 por defecto
-  const diaSemana = fecha.getDay(); // 0=dom, 1=lun...
-  if (diaSemana === 1) return { sesion: 'D1', semana: semanaDelDia, mesociclo: mesocicloActual };
-  if (diaSemana === 3) return { sesion: 'D2', semana: semanaDelDia, mesociclo: mesocicloActual };
-  if (diaSemana === 5) return { sesion: 'D3', semana: semanaDelDia, mesociclo: mesocicloActual };
-  return null;
+  // Normalizar las dos fechas a medianoche
+  const ini = new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate());
+  const dia = new Date(fecha.getFullYear(), fecha.getMonth(), fecha.getDate());
+
+  // Calcular días desde inicio
+  const dias = Math.round((dia - ini) / 86400000);
+  if (dias < 0) return null;
+
+  // Calcular semana (0-3) y día dentro de la semana (0-6, 0=lunes)
+  const semana = Math.floor(dias / 7);
+  if (semana >= 4) return null; // Fuera del mesociclo
+
+  const diaSemana = dias % 7; // 0=primer día del meso, 2=tercer día, 4=quinto día
+
+  // El mesociclo empieza en lunes
+  // D1 = día 0 de cada semana (lunes)
+  // D2 = día 2 de cada semana (miércoles)
+  // D3 = día 4 de cada semana (viernes)
+  let sesion = null;
+  if (diaSemana === 0) sesion = 'D1';
+  else if (diaSemana === 2) sesion = 'D2';
+  else if (diaSemana === 4) sesion = 'D3';
+
+  if (!sesion) return null;
+  return { sesion, semana: semana + 1, mesociclo: meso };
 }
 
 function keyFecha(fecha) {
