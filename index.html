@@ -723,11 +723,14 @@ async function init() {
     state.ejercicios = ejercicios;
     state.registroSeries = regSeries;
     state.registroEjercicios = regEjercicios;
-    console.log('State cargado:', {
-      config: state.config,
-      sesiones: state.sesiones.length,
-      ejercicios: state.ejercicios.length
-    });
+
+    // Calcular semana automáticamente desde FechaInicio
+    calcularSemanaActual();
+
+    // Cargar actividades guardadas del calendario
+    await cargarActividadesCalendario();
+
+    console.log('Config:', state.config);
     renderSesiones();
     initCalendario();
   } catch(e) {
@@ -739,8 +742,8 @@ async function init() {
 
 // ── RENDER SESIONES ──
 function renderSesiones() {
-  const { MesocicloActual, SemanaActual } = state.config;
-  const semana = parseInt(SemanaActual);
+  const MesocicloActual = state.config.MesocicloActual;
+  const semana = getSemanaActual();
   document.getElementById('sesiones-sub').innerHTML =
     `<span style="font-weight:600;color:var(--accent)">${MesocicloActual}</span> · Semana ${semana}`;
 
@@ -1217,6 +1220,129 @@ async function guardarEjercicio() {
 init();
 
 
+
+
+// ── PERSISTENCIA ACTIVIDADES CALENDARIO ──
+const APPS_SCRIPT_CAL_KEY = 'calendario_actividades';
+
+async function cargarActividadesCalendario() {
+  try {
+    // Intentar cargar desde RegistroEjercicios las actividades no-fuerza
+    // Las actividades de calendario se guardan con ID_EjercicioPlan = 'CAL-YYYY-MM-DD'
+    const actCal = state.registroEjercicios.filter(r =>
+      String(r.ID_EjercicioPlan || '').startsWith('CAL-')
+    );
+    actCal.forEach(r => {
+      const key = String(r.ID_EjercicioPlan).replace('CAL-', '');
+      actividadesDias[key] = {
+        tipo: r.ComentarioGeneral || 'descanso',
+        hecho: true
+      };
+    });
+    console.log('Actividades calendario cargadas:', Object.keys(actividadesDias).length);
+  } catch(e) {
+    console.warn('Error cargando actividades:', e);
+  }
+}
+
+async function guardarActividadCalendario(key, tipo) {
+  try {
+    await fetch(APPS_SCRIPT_URL, {
+      method: 'POST', mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'ejercicio',
+        row: {
+          ID_RegistroEjercicio: 'CAL-ACT-' + Date.now(),
+          ID_EjercicioPlan: 'CAL-' + key,
+          Fecha: key,
+          ComentarioGeneral: tipo,
+          EjercicioCompletado: true
+        }
+      })
+    });
+    console.log('Actividad guardada en Sheet:', key, tipo);
+  } catch(e) {
+    console.warn('Error guardando actividad:', e);
+  }
+}
+
+
+// ── CÁLCULO AUTOMÁTICO DE SEMANA ──
+function calcularSemanaActual() {
+  if (!state.config) return;
+
+  const fechaInicioRaw = state.config.FechaInicio || '';
+  if (!fechaInicioRaw) {
+    // Sin fecha de inicio, usar SemanaActual del config
+    state.config._semanaCalculada = parseInt(state.config.SemanaActual || 1);
+    return;
+  }
+
+  // Parsear fecha — puede venir como DD/MM/YYYY, D/M/YYYY o como número serial de Sheets
+  let fechaInicio;
+  const fechaStr = String(fechaInicioRaw).trim();
+
+  if (fechaStr.includes('/')) {
+    // Formato DD/MM/YYYY o D/M/YYYY
+    const partes = fechaStr.split('/');
+    if (partes.length === 3) {
+      const dia = parseInt(partes[0]);
+      const mes = parseInt(partes[1]) - 1; // 0-indexed
+      const anyo = parseInt(partes[2]);
+      fechaInicio = new Date(anyo, mes, dia);
+    }
+  } else if (!isNaN(parseFloat(fechaStr))) {
+    // Número serial de Google Sheets (días desde 30/12/1899)
+    const serial = parseFloat(fechaStr);
+    fechaInicio = new Date(Date.UTC(1899, 11, 30) + serial * 86400000);
+  }
+
+  if (!fechaInicio || isNaN(fechaInicio.getTime())) {
+    console.warn('FechaInicio no parseable:', fechaInicioRaw);
+    state.config._semanaCalculada = parseInt(state.config.SemanaActual || 1);
+    return;
+  }
+
+  // Calcular semana actual
+  const hoy = new Date();
+  hoy.setHours(0,0,0,0);
+  fechaInicio.setHours(0,0,0,0);
+
+  const diasDesdeInicio = Math.floor((hoy - fechaInicio) / (1000 * 60 * 60 * 24));
+  const semanaCalculada = Math.min(Math.max(Math.floor(diasDesdeInicio / 7) + 1, 1), 4);
+
+  state.config._semanaCalculada = semanaCalculada;
+  state.config._fechaInicioObj = fechaInicio;
+  console.log('Semana calculada:', semanaCalculada, '| Días desde inicio:', diasDesdeInicio);
+}
+
+// Devuelve la semana actual calculada automáticamente
+function getSemanaActual() {
+  return state.config?._semanaCalculada || parseInt(state.config?.SemanaActual || 1);
+}
+
+// Devuelve el rango de fechas de una semana del mesociclo
+function getFechasSemana(numSemana) {
+  if (!state.config?._fechaInicioObj) return null;
+  const inicio = new Date(state.config._fechaInicioObj);
+  inicio.setDate(inicio.getDate() + (numSemana - 1) * 7);
+  const fin = new Date(inicio);
+  fin.setDate(fin.getDate() + 6);
+  return { inicio, fin };
+}
+
+// Devuelve a qué semana del mesociclo pertenece una fecha
+function getSemanaDeUnaFecha(fecha) {
+  if (!state.config?._fechaInicioObj) return null;
+  const inicio = state.config._fechaInicioObj;
+  const dias = Math.floor((fecha - inicio) / (1000 * 60 * 60 * 24));
+  if (dias < 0) return null;
+  const sem = Math.floor(dias / 7) + 1;
+  return sem >= 1 && sem <= 4 ? sem : null;
+}
+
+
 // ── CALENDARIO ──
 const DIAS_SEMANA = ['L','M','X','J','V','S','D'];
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
@@ -1237,20 +1363,12 @@ const TIPOS_ACTIVIDAD = [
 // Calcular qué sesión toca cada semana según mesociclo
 function getSesionDelMes(fecha) {
   if (!state.config) return null;
-  const semanaActual = parseInt(state.config.SemanaActual || 1);
+  const semanaActual = getSemanaActual();
   const mesocicloActual = state.config.MesocicloActual || 'M5';
 
-  // Buscar el lunes más reciente como inicio de semana actual
-  const hoy = new Date();
-  const diaHoy = hoy.getDay() === 0 ? 7 : hoy.getDay(); // 1=lun ... 7=dom
-  const lunesEstaSemanaTstamp = hoy - (diaHoy - 1) * 86400000;
-
-  // Semana offset del día consultado
-  const lunesDia = new Date(fecha);
-  lunesDia.setDate(fecha.getDate() - (fecha.getDay() === 0 ? 6 : fecha.getDay() - 1));
-  const diffSemanas = Math.round((lunesDia - lunesEstaSemanaTstamp) / (7 * 86400000));
-  const semanaDelDia = semanaActual + diffSemanas;
-  if (semanaDelDia < 1 || semanaDelDia > 4) return null;
+  // Calcular semana basada en FechaInicio del mesociclo
+  const semanaDelDia = getSemanaDeUnaFecha(fecha);
+  if (!semanaDelDia) return null;
 
   // Días L/X/V = D1/D2/D3 por defecto
   const diaSemana = fecha.getDay(); // 0=dom, 1=lun...
@@ -1377,8 +1495,8 @@ function abrirModal(key, dia) {
 
 function seleccionarActividad(tipo) {
   actividadSeleccionada = tipo;
-  // Guardar
   actividadesDias[modalDiaKey] = { tipo, hecho: true };
+  guardarActividadCalendario(modalDiaKey, tipo); // Guardar en Sheet
   cerrarModal();
   renderCalendario();
   showToast('Actividad registrada ✓', 'success');
@@ -1391,6 +1509,7 @@ function irASesion(idSesion) {
 
 function registrarYIr(key, tipo, idSesion) {
   actividadesDias[key] = { tipo, hecho: true };
+  guardarActividadCalendario(key, tipo); // Guardar en Sheet
   cerrarModal();
   selectSesion(idSesion);
 }
@@ -1405,8 +1524,7 @@ function initCalendario() {
   try {
     if (!state.config) { console.error('initCalendario: no config'); return; }
     const MesocicloActual = state.config.MesocicloActual || 'M5';
-    const SemanaActual = state.config.SemanaActual || 1;
-    const semana = parseInt(SemanaActual);
+    const semana = getSemanaActual();
 
     const elSemanaInfo = document.getElementById('semana-info');
     const elCalHeader = document.getElementById('cal-header');
@@ -1469,7 +1587,7 @@ function calcularKgMovidos(registros) {
 
 function renderProgreso() {
   const meso = state.config?.MesocicloActual || 'M5';
-  const semanaActual = parseInt(state.config?.SemanaActual || 1);
+  const semanaActual = getSemanaActual();
   document.getElementById('progreso-sub').textContent = `${meso} · Semana ${semanaActual} de 4`;
 
   const registros = getRegistrosM5();
