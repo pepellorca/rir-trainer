@@ -349,6 +349,7 @@
   .cal-grid {
     display: grid; grid-template-columns: repeat(7, 1fr);
     gap: 2px; padding: 0 12px 16px;
+    min-height: 280px;
   }
   .cal-dia-header {
     text-align: center; font-size: 11px; font-weight: 600;
@@ -356,12 +357,12 @@
     text-transform: uppercase; letter-spacing: 0.5px;
   }
   .cal-dia {
-    aspect-ratio: 1; border-radius: 10px;
+    border-radius: 10px;
     display: flex; flex-direction: column;
     align-items: center; justify-content: center;
     cursor: pointer; position: relative;
-    transition: background 0.15s; padding: 2px;
-    min-height: 44px;
+    transition: background 0.15s; padding: 4px 2px;
+    min-height: 48px; min-width: 0;
   }
   .cal-dia:active { opacity: 0.7; }
   .cal-dia.vacio { cursor: default; }
@@ -1338,7 +1339,6 @@ const TIPOS_ACTIVIDAD = [
 // Calcular qué sesión toca cada semana según mesociclo
 function getSesionDelMes(fecha) {
   if (!state.config) return null;
-  const semanaActual = getSemanaActual();
   const mesocicloActual = state.config.MesocicloActual || 'M5';
 
   // Calcular semana basada en FechaInicio del mesociclo
@@ -1354,7 +1354,11 @@ function getSesionDelMes(fecha) {
 }
 
 function keyFecha(fecha) {
-  return fecha.toISOString().split('T')[0];
+  // Usar fecha local para evitar problemas de zona horaria (España UTC+2)
+  const y = fecha.getFullYear();
+  const m = String(fecha.getMonth()+1).padStart(2,'0');
+  const d = String(fecha.getDate()).padStart(2,'0');
+  return y + '-' + m + '-' + d;
 }
 
 function renderCalendario() {
@@ -1435,7 +1439,10 @@ function abrirModal(key, dia) {
   actividadSeleccionada = actividadesDias[key]?.tipo || null;
 
   const fecha = new Date(key);
-  const fechaStr = fecha.toLocaleDateString('es-ES', { weekday:'long', day:'numeric', month:'long' });
+  // Reconstruir fecha desde key para evitar offset UTC
+  const [ky, km, kd] = key.split('-').map(Number);
+  const fechaLocal = new Date(ky, km-1, kd); // fecha local sin UTC
+  const fechaStr = fechaLocal.toLocaleDateString('es-ES', { weekday:'long', day:'numeric', month:'long' });
   document.getElementById('modal-fecha').textContent = fechaStr.charAt(0).toUpperCase() + fechaStr.slice(1);
 
   const sesionPlan = getSesionDelMes(fecha);
