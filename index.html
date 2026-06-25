@@ -402,11 +402,11 @@ function uniqueId(prefix) {
 async function fetchSheet(name) {
   const res = await fetch(BASE + encodeURIComponent(name));
   const text = await res.text();
-  // Google Sheets devuelve: /*O_o*/\ngoogle.visualization.Query.setResponse({...});
   const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\)/);
   if (!match) throw new Error('Formato de respuesta inesperado de Google Sheets');
   const json = JSON.parse(match[1]);
   const cols = json.table.cols.map(c => c.label);
+  if (name === 'EjerciciosPlan') console.log('Columnas EjerciciosPlan:', cols);
   return json.table.rows.map(r => {
     const obj = {};
     r.c.forEach((cell, i) => { obj[cols[i]] = cell ? (cell.v !== null ? cell.v : '') : ''; });
@@ -577,8 +577,15 @@ function getUltimoPesoInfo(ejercicio) {
     return { peso: pesoMax, fuente: 'historial' };
   }
 
-  // 3. Fallback: usar PesoActual del plan
-  const pesoActual = parseFloat(ejercicio.PesoActual || ejercicio['Peso Actual'] || 0);
+  // 3. Fallback: usar PesoActual del plan (buscar con varios nombres posibles)
+  const pesoActual = parseFloat(
+    ejercicio.PesoActual ||
+    ejercicio['Peso Actual'] ||
+    ejercicio['PesoActual '] ||
+    ejercicio[' PesoActual'] ||
+    Object.entries(ejercicio).find(([k]) => k.toLowerCase().includes('peso') && k.toLowerCase().includes('actual'))?.[1] ||
+    0
+  );
   if (pesoActual > 0) return { peso: pesoActual, fuente: 'plan' };
 
   return { peso: 0, fuente: null };
