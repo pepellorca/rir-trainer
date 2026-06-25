@@ -500,10 +500,23 @@ function selectSesion(idSesion) {
 
   document.getElementById('ejercicios-list').innerHTML = ejercicios.map((e, idx) => {
     const completado = completadosIds.has(e.ID_EjercicioPlan);
-    const ultimoPeso = getUltimoPeso(e.ID_EjercicioPlan);
+    const pesoInfo = getUltimoPesoInfo(e);
+    const ultimoPeso = pesoInfo.peso;
     const pesoRec = getPesoRecomendado(e, ultimoPeso);
     const seriesHechas = (state.seriesLocales[e.ID_EjercicioPlan] || []).filter(s=>s.completada).length;
     const icono = grupoIcon(e.GrupoMuscular);
+
+    // Etiqueta de peso según fuente
+    let pesoTag = '';
+    if (ultimoPeso > 0) {
+      if (pesoInfo.fuente === 'historial') {
+        pesoTag = `<span class="tag" style="color:var(--green);background:rgba(48,209,88,0.12)">✓ Último: ${ultimoPeso}kg</span>`;
+      } else if (pesoInfo.fuente === 'plan') {
+        pesoTag = `<span class="tag" style="color:var(--blue);background:rgba(10,132,255,0.12)">📋 Ref: ${ultimoPeso}kg</span>`;
+      }
+    }
+    const recTag = pesoRec>0 ? `<span class="tag" style="color:var(--accent);background:rgba(245,166,35,0.12)">⬆ Hoy: ${pesoRec}kg</span>` : '';
+    const seriesTag = seriesHechas>0&&!completado ? `<span class="tag" style="color:var(--blue);background:rgba(10,132,255,0.12)">${seriesHechas}/${e.SeriesObjetivo} series</span>` : '';
 
     return `<div class="ejercicio-card ${completado?'completado':''}" onclick="selectEjercicio('${e.ID_EjercicioPlan}')">
       <div class="ejercicio-header">
@@ -512,9 +525,9 @@ function selectSesion(idSesion) {
           <div class="ejercicio-tags">
             <span class="tag">${e.GrupoMuscular}</span>
             <span class="tag accent">${e.SeriesObjetivo}×${e.RepsObjetivo} · RIR ${e.RIRObjetivo}</span>
-            ${ultimoPeso>0?`<span class="tag">Último: ${ultimoPeso}kg</span>`:''}
-            ${pesoRec>0&&pesoRec!==ultimoPeso?`<span class="tag" style="color:var(--accent);background:rgba(245,166,35,0.12)">→ ${pesoRec}kg</span>`:''}
-            ${seriesHechas>0&&!completado?`<span class="tag" style="color:var(--blue);background:rgba(10,132,255,0.12)">${seriesHechas}/${e.SeriesObjetivo} series</span>`:''}
+            ${pesoTag}
+            ${recTag}
+            ${seriesTag}
           </div>
         </div>
         <div class="estado-badge ${completado?'completado':''}">
@@ -536,10 +549,48 @@ function selectSesion(idSesion) {
 }
 
 // ── PESO UTILS ──
-function getUltimoPeso(idEjercicioPlan) {
-  const series = state.registroSeries.filter(r => r.ID_EjercicioPlan === idEjercicioPlan);
-  if (!series.length) return 0;
-  return Math.max(...series.map(r => parseFloat(r.Peso)||0));
+// Devuelve {peso, fuente} — fuente puede ser 'historial', 'plan' o null
+function getUltimoPesoInfo(ejercicio) {
+  // 1. Buscar en historial de series registradas (mismo ID_EjercicioPlan)
+  const seriesMismoId = state.registroSeries.filter(r =>
+    r.ID_EjercicioPlan === ejercicio.ID_EjercicioPlan && parseFloat(r.Peso) > 0
+  );
+  if (seriesMismoId.length) {
+    // Ordenar por timestamp descendente y coger el más reciente
+    const sorted = seriesMismoId.sort((a,b) => {
+      const ta = new Date(a.Timestamp||a.Fecha||0).getTime();
+      const tb = new Date(b.Timestamp||b.Fecha||0).getTime();
+      return tb - ta;
+    });
+    const pesoMax = Math.max(...seriesMismoId.map(r => parseFloat(r.Peso)||0));
+    return { peso: pesoMax, fuente: 'historial' };
+  }
+
+  // 2. Buscar en mesociclos anteriores por nombre de ejercicio
+  const nombreEj = ejercicio.NombreEjercicio?.trim().toLowerCase();
+  const seriesNombre = state.registroSeries.filter(r => {
+    const ejPlan = state.ejercicios.find(e => e.ID_EjercicioPlan === r.ID_EjercicioPlan);
+    return ejPlan && ejPlan.NombreEjercicio?.trim().toLowerCase() === nombreEj && parseFloat(r.Peso) > 0;
+  });
+  if (seriesNombre.length) {
+    const pesoMax = Math.max(...seriesNombre.map(r => parseFloat(r.Peso)||0));
+    return { peso: pesoMax, fuente: 'historial' };
+  }
+
+  // 3. Fallback: usar PesoActual del plan
+  const pesoActual = parseFloat(ejercicio.PesoActual || ejercicio['Peso Actual'] || 0);
+  if (pesoActual > 0) return { peso: pesoActual, fuente: 'plan' };
+
+  return { peso: 0, fuente: null };
+}
+
+function getUltimoPeso(ejercicio) {
+  if (typeof ejercicio === 'string') {
+    // compatibilidad legacy: recibe ID
+    const ej = state.ejercicios.find(e => e.ID_EjercicioPlan === ejercicio);
+    return ej ? getUltimoPesoInfo(ej).peso : 0;
+  }
+  return getUltimoPesoInfo(ejercicio).peso;
 }
 
 function getPesoRecomendado(ejercicio, ultimoPeso) {
@@ -548,14 +599,17 @@ function getPesoRecomendado(ejercicio, ultimoPeso) {
     r.ID_EjercicioPlan === ejercicio.ID_EjercicioPlan &&
     (r.Completada===true||r.Completada==='TRUE')
   );
-  if (seriesReg.length < parseInt(ejercicio.SeriesObjetivo)) return ultimoPeso;
-  const todasRepsOk = seriesReg.every(s => parseInt(s.RepsRealizadas) >= parseInt(ejercicio.RepsObjetivo));
-  const todoRIROk = seriesReg.every(s => parseInt(s.RIRReal) > parseInt(ejercicio.RIRObjetivo));
+  if (seriesReg.length < parseInt(ejercicio.SeriesObjetivo)) return 0;
+  const repsObj = parseInt(String(ejercicio.RepsObjetivo).split('-')[0]) || 0;
+  const rirObj  = parseInt(String(ejercicio.RIRObjetivo).split('-')[0])  || 0;
+  const todasRepsOk = seriesReg.every(s => parseInt(s.RepsRealizadas) >= repsObj);
+  const todoRIROk   = seriesReg.every(s => parseInt(s.RIRReal) > rirObj);
   if (todasRepsOk && todoRIROk) {
-    const inc = ejercicio.CategoriaProgresion==='Tren superior'?2.5:ejercicio.CategoriaProgresion==='Tren inferior'?5:1;
+    const inc = ejercicio.CategoriaProgresion==='Tren superior'?2.5:
+                ejercicio.CategoriaProgresion==='Tren inferior'?5:1;
     return ultimoPeso + inc;
   }
-  return ultimoPeso;
+  return 0;
 }
 
 // ── SELECT EJERCICIO ──
@@ -569,7 +623,8 @@ function selectEjercicio(idEjercicioPlan) {
 function renderRegistro() {
   const e = state.ejercicioActual;
   const numSeries = parseInt(e.SeriesObjetivo);
-  const ultimoPeso = getUltimoPeso(e.ID_EjercicioPlan);
+  const pesoInfo = getUltimoPesoInfo(e);
+  const ultimoPeso = pesoInfo.peso;
   const pesoRec = getPesoRecomendado(e, ultimoPeso);
   const pesoInicial = pesoRec > 0 ? pesoRec : (ultimoPeso > 0 ? ultimoPeso : '');
 
@@ -593,8 +648,9 @@ function renderRegistro() {
       </div>
     </div>
 
-    ${ultimoPeso>0?`<div class="peso-ref"><span class="peso-ref-label">Último peso registrado</span><span class="peso-ref-value">${ultimoPeso} kg</span></div>`:''}
-    ${pesoRec>0&&pesoRec!==ultimoPeso?`<div class="peso-rec"><span class="peso-rec-label">⬆ Recomendado hoy</span><span class="peso-rec-value">${pesoRec} kg</span></div>`:''}
+    ${ultimoPeso>0 && pesoInfo.fuente==='historial' ? `<div class="peso-ref"><span class="peso-ref-label">✓ Último peso registrado</span><span class="peso-ref-value">${ultimoPeso} kg</span></div>` : ''}
+    ${ultimoPeso>0 && pesoInfo.fuente==='plan' ? `<div class="peso-ref" style="border-color:rgba(10,132,255,0.25);background:rgba(10,132,255,0.08)"><span class="peso-ref-label" style="color:var(--blue)">📋 Referencia del plan</span><span class="peso-ref-value">${ultimoPeso} kg</span></div>` : ''}
+    ${pesoRec>0 ? `<div class="peso-rec"><span class="peso-rec-label">⬆ Recomendado hoy</span><span class="peso-rec-value">${pesoRec} kg</span></div>` : ''}
     ${e.NotasEntrenador?`<div class="nota-entrenador">💡 ${e.NotasEntrenador}</div>`:''}
 
     <div class="timer-bar" id="timer-bar">
