@@ -1,0 +1,32 @@
+{
+  "name": "rir-trainer",
+  "private": true,
+  "version": "8.0.0-alpha.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "cap:add:ios": "npm run build && npx cap add ios",
+    "cap:sync": "npm run build && npx cap sync && node scripts/copy-ios-assets.mjs",
+    "cap:open:ios": "npx cap open ios",
+    "ios:icons": "bash scripts/install-ios-icons.sh"
+  },
+  "dependencies": {
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/core": "^8.4.1",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/ios": "^8.4.1",
+    "@capacitor/local-notifications": "^8.2.0",
+    "@capacitor/network": "^8.0.1",
+    "@capacitor/preferences": "^8.0.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.4.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.2",
+    "vitest": "^4.1.9"
+  }
+}
